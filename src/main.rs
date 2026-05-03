@@ -174,13 +174,123 @@ fn find_root(path: &Path, marker: &str) -> Option<PathBuf> {
     None
 }
 
-async fn run_output(path: &Path, _project_mode: bool) -> Result<()> {
+async fn run_output(path: &Path, project_mode: bool) -> Result<()> {
     println!(
         "{} running {}",
         "→".green(),
         path.display().to_string().bold()
     );
-    // TODO: sandbox runner
+
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let is_project = project_mode || detect_project(path);
+
+    if is_project {
+        run_project(path, extension).await?;
+
+    } else {
+        run_snippet(path, extension).await?;
+    }
+    
+    Ok(())
+}
+
+fn detect_project(path: &Path) -> bool {
+    find_root(path, "Cargo.toml").is_some() ||
+    find_root(path, "package.json").is_some() ||
+    find_root(path, "go.mod").is_some() ||
+}
+
+async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
+    match extension {
+        "c" | "cpp" => {
+            let tmp_dir = tempfile::tempdir()?;
+            let tmp_path = tmp_dir.path().join("keen_exec");
+            
+            let status = tokio::process::Command::new("clang")
+                .arg(path)
+                .arg("-o")
+                .arg(&tmp_path)
+                .status()
+                .await?;
+
+            if status.success() {
+                if tmp_path.exists() {
+                    tokio::process::Command::new(&tmp_path).status().await?;
+                } else {
+                    anyhow::bail!("binary created by compiler not found at {}", tmp_path.display());
+                }
+            } else {
+                anyhow::bail!("compiler failed to compile snippet");
+            }
+        }
+        "go" => {
+            tokio::process::Command::new("go")
+                .arg("run")
+                .arg(path)
+                .status()
+                .await?;
+        }
+        "rs" => {
+            let tmp_dir = tempfile::tempdir()?;
+            let tmp_path = tmp_dir.path().join("keen_exec");
+
+            let status = tokio::process::Command::new("rustc")
+                .arg(path)
+                .arg("-o")
+                .arg(&tmp_path)
+                .status()
+                .await?;
+
+            if status.success() {
+                if tmp_path.exists() {
+                    tokio::process::Command::new(&tmp_path).status().await?;
+                } else {
+                    anyhow::bail!("binary created by compiler not found at {}", tmp_path.display());
+                }
+            } else {
+                anyhow::bail!("compiler failed to compile snippet");
+            }
+        }
+        "js" | "mjs" => {
+            tokio::process::Command::new("node")
+                .arg(path)
+                .status()
+                .await?;
+        }
+        "json" => {
+            let content = tokio::fs::read_to_string(path).await?;
+            println!("{}", content);
+        }
+        _ => println!("{} don't know how to run .{} files yet", "info".yellow(), extension),
+    }
+    Ok(())
+}
+
+
+async fn run_project(path: &Path, extension: &str) -> Result<()> {
+    if let Some(cargo_root) = find_root(path, "Cargo.toml") {
+        tokio::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(cargo_root)
+            .status()
+            .await?;
+    } else if let Some(node_root) = find_root(path, "package.json") {
+        tokio::process::Command::new("npm")
+            .arg("start")
+            .current_dir(node_root)
+            .status()
+            .await?;
+    } else if let Some(go_root) = find_root(path, "go.mod") {
+        tokio::process::Command::new("go")
+            .arg("run")
+            .arg(".")
+            .current_dir(go_root)
+            .status()
+            .await?;
+    } else {
+        println!("{} detected project but no recognized runner found, falling back to snippet mode", "info".yellow());
+        run_snippet(path, extension).await?;
+    }
     Ok(())
 }
 
