@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Keen, the universal linter and runner!", long_about = None)]
 struct Args {
-    file: PathBuf,
+    file: Option<PathBuf>,
     #[arg(short, long)]
     check: bool,
     #[arg(short, long)]
@@ -15,40 +15,56 @@ struct Args {
     proceed: bool,
     #[arg(short = 'P', long)]
     project: bool,
+    #[arg(long)]
+    install: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    if !args.file.exists() {
-        eprintln!(
-            "{}: file not found: {}",
-            "error".red().bold(),
-            args.file.display()
-        );
+
+    if args.install {
+        return install_keen().await;
+    }
+
+    let file = match args.file {
+        Some(f) => f,
+        None => {
+            println!("{} provide a file to check or run, or use --help", "info".yellow());
+            return Ok(());
+        }
+    };
+
+    if !file.exists() {
+        eprintln!("{}: file not found: {}", "error".red().bold(), file.display());
         std::process::exit(1);
     }
 
+    shell_integ_check().await?;
     let mut performed_action = false;
+
     if args.check {
-        run_check(&args.file).await?;
+        run_check(&file).await?;
         performed_action = true;
     }
 
     if args.output {
-        run_output(&args.file, args.project).await?;
+        run_output(&file, args.project).await?;
         performed_action = true;
     }
     if args.proceed {
-        run_proceed(&args.file).await?;
+        run_proceed(&file).await?;
         performed_action = true;
     }
 
+    // default to check if no flags provided
     if !performed_action {
-        run_check(&args.file).await?;
+        run_check(&file).await?;
     }
+
     Ok(())
 }
+
 
 async fn run_check(path: &Path) -> Result<()> {
     println!(
@@ -316,7 +332,7 @@ async fn run_project(path: &Path, extension: &str) -> Result<()> {
     Ok(())
 }
 
-async fn check_shell_integration() -> Result<()> {
+async fn shell_integ_check() -> Result<()> {
     let exe_path = std::env::current_exe()?;
     let path_env = std::env::var("PATH").unwrap_or_default();
     
