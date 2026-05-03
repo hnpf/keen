@@ -276,34 +276,101 @@ async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
     Ok(())
 }
 
-
 async fn run_project(path: &Path, extension: &str) -> Result<()> {
-    if let Some(cargo_root) = find_root(path, "Cargo.toml") {
-        tokio::process::Command::new("cargo")
-            .arg("run")
-            .current_dir(cargo_root)
-            .status()
-            .await?;
-    } else if let Some(node_root) = find_root(path, "package.json") {
-        tokio::process::Command::new("npm")
-            .arg("start")
-            .current_dir(node_root)
-            .status()
-            .await?;
-    } else if let Some(go_root) = find_root(path, "go.mod") {
-        tokio::process::Command::new("go")
-            .arg("run")
-            .arg(".")
-            .current_dir(go_root)
-            .status()
-            .await?;
-    } else {
-        println!("{} detected project but no recognized runner found, falling back to snippet mode", "info".yellow());
-        run_snippet(path, extension).await?;
+    if extension == "rs" {
+        if let Some(cargo_root) = find_root(path, "Cargo.toml") {
+            tokio::process::Command::new("cargo")
+                .arg("run")
+                .current_dir(cargo_root)
+                .status()
+                .await?;
+            return Ok(());
+        }
     }
+    
+    if matches!(extension, "js" | "ts" | "jsx" | "tsx") {
+        if let Some(node_root) = find_root(path, "package.json") {
+            tokio::process::Command::new("npm")
+                .arg("start")
+                .current_dir(node_root)
+                .status()
+                .await?;
+            return Ok(());
+        }
+    }
+
+    if extension == "go" {
+        if let Some(go_root) = find_root(path, "go.mod") {
+            tokio::process::Command::new("go")
+                .arg("run")
+                .arg(".")
+                .current_dir(go_root)
+                .status()
+                .await?;
+            return Ok(());
+        }
+    }
+
+    println!("{} detected project but no recognized runner found, falling back to snippet mode", "info".yellow());
+    run_snippet(path, extension).await?;
     Ok(())
 }
 
+async fn check_shell_integration() -> Result<()> {
+    let exe_path = std::env::current_exe()?;
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    
+    let in_path = path_env.split(':').any(|p| {
+        let p = Path::new(p);
+        exe_path.starts_with(p)
+    });
+
+    if !in_path {
+        println!("{} Keen is not in your $PATH! do you wish to add it? (run with --install)", "info".yellow());
+    }
+    
+    Ok(())
+}
+
+async fn install_keen() -> Result<()> {
+    let current_exe = std::env::current_exe()?;
+    let home = std::env::var("HOME").context("Could not find HOME directory")?;
+    let local_bin = PathBuf::from(&home).join(".local/bin");
+    
+    if !local_bin.exists() {
+        std::fs::create_dir_all(&local_bin)?;
+    }
+    
+    let target = local_bin.join("keen");
+    std::fs::copy(&current_exe, &target)?;
+    
+    println!("{} installed to {}", "ok".green().bold(), target.display().to_string().cyan());
+    
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    if !path_env.contains(local_bin.to_str().unwrap()) {
+        println!("{} {} is not in your $PATH", "warn".yellow(), local_bin.display());
+        
+        let shell = std::env::var("SHELL").unwrap_or_default();
+        let config_file = if shell.contains("zsh") {
+            Some(".zshrc")
+        } else if shell.contains("bash") {
+            Some(".bashrc")
+        } else if shell.contains("fish") {
+            Some(".config/fish/config.fish")
+        } else {
+            None
+        };
+
+        if let Some(cfg) = config_file {
+            let cfg_path = PathBuf::from(&home).join(cfg);
+            println!("{} add to {}? (y/n)", "prompt".magenta(), cfg);
+            // need read stdin.. temporary
+            println!("run this: echo 'export PATH=\"$PATH:{}\"' >> {}", local_bin.display(), cfg_path.display());
+        }
+    }
+    
+    Ok(())
+}
 async fn run_proceed(path: &Path) -> Result<()> {
     println!(
         "{} building {}",
