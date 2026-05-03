@@ -1,23 +1,20 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use colored::*;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about = "Keen, the universal linter and runner!", long_about = None)]
-struct Args {
-    file: Option<PathBuf>,
-    #[arg(short, long)]
-    check: bool,
-    #[arg(short, long)]
-    output: bool,
-    #[arg(short, long)]
-    proceed: bool,
-    #[arg(short = 'P', long)]
-    project: bool,
-    #[arg(long)]
-    install: bool,
-}
+mod args;
+mod check;
+mod install;
+mod run;
+mod utils;
+
+use crate::args::Args;
+use crate::check::run_check;
+use crate::install::install_keen;
+use crate::run::{run_output, run_proceed};
+use crate::utils::shell_integ_check;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +24,11 @@ async fn main() -> Result<()> {
         return install_keen().await;
     }
 
-    let file = match args.file {
+    if args.init {
+        return init_project().await;
+    }
+
+    let file = match args.file.as_ref() {
         Some(f) => f,
         None => {
             println!(
@@ -48,385 +49,153 @@ async fn main() -> Result<()> {
     }
 
     shell_integ_check().await?;
+
+    if args.watch {
+        return watch_mode(file, &args).await;
+    }
+
+    let success = run_actions(file, &args).await?;
+    if !success {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
+    let start = Instant::now();
     let mut performed_action = false;
+    let mut overall_success = true;
+
+    if args.fmt {
+        if !run_fmt(file).await? {
+            overall_success = false;
+        }
+        performed_action = true;
+    }
 
     if args.check {
-        run_check(&file).await?;
+        if file.is_dir() {
+            if !check_dir(file).await? {
+                overall_success = false;
+            }
+        } else {
+            if !run_check(file).await? {
+                overall_success = false;
+            }
+        }
         performed_action = true;
     }
 
     if args.output {
-        run_output(&file, args.project).await?;
+        if !run_output(file, args.project, &args.trailing).await? {
+            overall_success = false;
+        }
         performed_action = true;
     }
+
     if args.proceed {
-        run_proceed(&file).await?;
+        if !run_proceed(file).await? {
+            overall_success = false;
+        }
         performed_action = true;
     }
 
     // default to check if no flags provided
     if !performed_action {
-        run_check(&file).await?;
-    }
-
-    Ok(())
-}
-
-async fn run_check(path: &Path) -> Result<()> {
-    println!(
-        "{} checking {}",
-        "→".cyan(),
-        path.display().to_string().bold()
-    );
-
-    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-
-    match extension {
-        "json" => check_json(path).await?,
-        "c" | "cpp" | "h" | "hpp" => check_c_family(path).await?,
-        "go" => check_go(path).await?,
-        "rs" => check_rust(path).await?,
-        _ => println!(
-            "{} no analyzer for .{}, skipping",
-            "info".yellow(),
-            extension
-        ),
-    }
-
-    Ok(())
-}
-
-async fn check_json(path: &Path) -> Result<()> {
-    let content = tokio::fs::read_to_string(path)
-        .await
-        .context("Failed to read file")?;
-
-    match serde_json::from_str::<serde_json::Value>(&content) {
-        Ok(_) => println!("{} {}", "ok".green().bold(), "valid JSON"),
-        Err(e) => {
-            println!(
-                "{}:{}:{} -> {}",
-                path.display().to_string().dimmed(),
-                e.line(),
-                e.column(),
-                e.to_string().red()
-            );
+        if file.is_dir() {
+            if !check_dir(file).await? {
+                overall_success = false;
+            }
+        } else {
+            if !run_check(file).await? {
+                overall_success = false;
+            }
         }
     }
-    Ok(())
-}
 
-async fn check_c_family(path: &Path) -> Result<()> {
-    let output = tokio::process::Command::new("clang")
-        .arg("-fsyntax-only")
-        .arg("-Wall")
-        .arg(path)
-        .output()
-        .await?;
-
-    if !output.status.success() {
-        parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
-    } else {
-        println!("{} {}", "ok".green().bold(), "C/C++ syntax valid");
+    let duration = start.elapsed();
+    if performed_action || !args.check && !args.output && !args.proceed {
+        println!("{} done in {:.2?}", "info".yellow(), duration);
     }
-    Ok(())
+
+    Ok(overall_success)
 }
 
-async fn check_go(path: &Path) -> Result<()> {
-    let output = tokio::process::Command::new("go")
-        .arg("build")
-        .arg("-o")
-        .arg("/dev/null")
-        .arg(path)
-        .output()
-        .await?;
-
-    if !output.status.success() {
-        parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
-    } else {
-        println!("{} {}", "ok".green().bold(), "go syntax valid");
+async fn check_dir(dir: &Path) -> Result<bool> {
+    let mut all_ok = true;
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        if !run_check(entry.path()).await? {
+            all_ok = false;
+        }
     }
-    Ok(())
+    Ok(all_ok)
 }
 
-async fn check_rust(path: &Path) -> Result<()> {
-    // cargo check if we're inside a project, rustc otherwise
-    // TODO: -Z no-codegen needs nightly, worth adding a stable fallback
-    let cargo_root = find_root(path, "Cargo.toml");
-
-    let output = if let Some(ref root) = cargo_root {
-        tokio::process::Command::new("cargo")
-            .arg("check")
-            .current_dir(root)
-            .output()
-            .await?
-    } else {
-        tokio::process::Command::new("rustc")
-            .arg("-Z")
-            .arg("no-codegen")
-            .arg(path)
-            .output()
-            .await?
+async fn run_fmt(path: &Path) -> Result<bool> {
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let cmd = match ext {
+        "rs" => ("rustfmt", vec![path.to_str().unwrap()]),
+        "go" => ("gofmt", vec!["-w", path.to_str().unwrap()]),
+        "c" | "cpp" | "h" | "hpp" => ("clang-format", vec!["-i", path.to_str().unwrap()]),
+        "js" | "ts" | "jsx" | "tsx" => ("prettier", vec!["--write", path.to_str().unwrap()]),
+        _ => {
+            println!("{} no formatter for .{}, skipping", "info".yellow(), ext);
+            return Ok(true);
+        }
     };
 
-    if !output.status.success() {
-        parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
-    } else {
-        println!("{} {}", "ok".green().bold(), "rust syntax valid");
+    println!("{} formatting {}", "→".magenta(), path.display());
+    let status = tokio::process::Command::new(cmd.0)
+        .args(cmd.1)
+        .status()
+        .await;
+
+    match status {
+        Ok(s) => Ok(s.success()),
+        Err(_) => {
+            println!("{} {} not found", "error".red(), cmd.0);
+            Ok(false)
+        }
     }
+}
+
+async fn init_project() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    println!("{} initializing in {}", "→".green(), cwd.display());    
     Ok(())
 }
 
-fn parse_compiler_output(output: &str) {
-    for line in output.lines() {
-        if line.contains(": error:") || line.contains(": warning:") || line.contains("error[") {
-            println!("{}", line);
+async fn watch_mode(file: &PathBuf, args: &Args) -> Result<()> {
+    use notify::{Watcher, RecursiveMode};
+    use tokio::sync::mpsc;
+
+    let (tx, mut rx) = mpsc::channel(1);
+    let mut watcher = notify::recommended_watcher(move |res| {
+        if let Ok(_) = res {
+            let _ = tx.blocking_send(());
         }
-    }
-}
+    })?;
 
-fn find_root(path: &Path, marker: &str) -> Option<PathBuf> {
-    let mut current = path.parent();
-    while let Some(dir) = current {
-        if dir.join(marker).exists() {
-            return Some(dir.to_path_buf());
-        }
-        current = dir.parent();
-    }
-    None
-}
+    watcher.watch(file, RecursiveMode::Recursive)?;
 
-async fn run_output(path: &Path, project_mode: bool) -> Result<()> {
-    println!(
-        "{} running {}",
-        "→".green(),
-        path.display().to_string().bold()
-    );
+    println!("{} watching for changes...", "info".yellow());
+    
+    // initial run
+    let _ = run_actions(file, args).await;
 
-    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let is_project =
-        project_mode || (detect_project(path) && is_relevant_for_project(extension, path));
-
-    if is_project {
-        run_project(path, extension).await?;
-    } else {
-        run_snippet(path, extension).await?;
+    while let Some(_) = rx.recv().await {
+        // debounce slightly
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        while let Ok(_) = rx.try_recv() {} // clear channel
+        
+        println!("\n{} change detected, re-running...", "info".yellow());
+        let _ = run_actions(file, args).await;
     }
 
-    Ok(())
-}
-
-fn detect_project(path: &Path) -> bool {
-    find_root(path, "Cargo.toml").is_some()
-        || find_root(path, "package.json").is_some()
-        || find_root(path, "go.mod").is_some()
-}
-
-fn is_relevant_for_project(extension: &str, path: &Path) -> bool {
-    match extension {
-        "rs" => find_root(path, "Cargo.toml").is_some(),
-        "js" | "ts" | "jsx" | "tsx" => find_root(path, "package.json").is_some(),
-        "go" => find_root(path, "go.mod").is_some(),
-        _ => false,
-    }
-}
-
-async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
-    match extension {
-        "c" | "cpp" => {
-            let tmp_dir = tempfile::tempdir()?;
-            let tmp_path = tmp_dir.path().join("keen_exec");
-
-            let status = tokio::process::Command::new("clang")
-                .arg(path)
-                .arg("-o")
-                .arg(&tmp_path)
-                .status()
-                .await?;
-
-            if status.success() {
-                if tmp_path.exists() {
-                    tokio::process::Command::new(&tmp_path).status().await?;
-                } else {
-                    anyhow::bail!(
-                        "binary created by compiler not found at {}",
-                        tmp_path.display()
-                    );
-                }
-            } else {
-                anyhow::bail!("compiler failed to compile snippet");
-            }
-        }
-        "go" => {
-            tokio::process::Command::new("go")
-                .arg("run")
-                .arg(path)
-                .status()
-                .await?;
-        }
-        "rs" => {
-            let tmp_dir = tempfile::tempdir()?;
-            let tmp_path = tmp_dir.path().join("keen_exec");
-
-            let status = tokio::process::Command::new("rustc")
-                .arg(path)
-                .arg("-o")
-                .arg(&tmp_path)
-                .status()
-                .await?;
-
-            if status.success() {
-                if tmp_path.exists() {
-                    tokio::process::Command::new(&tmp_path).status().await?;
-                } else {
-                    anyhow::bail!(
-                        "binary created by compiler not found at {}",
-                        tmp_path.display()
-                    );
-                }
-            } else {
-                anyhow::bail!("compiler failed to compile snippet");
-            }
-        }
-        "js" | "mjs" => {
-            tokio::process::Command::new("node")
-                .arg(path)
-                .status()
-                .await?;
-        }
-        "json" => {
-            let content = tokio::fs::read_to_string(path).await?;
-            println!("{}", content);
-        }
-        _ => println!(
-            "{} don't know how to run .{} files yet",
-            "info".yellow(),
-            extension
-        ),
-    }
-    Ok(())
-}
-
-async fn run_project(path: &Path, extension: &str) -> Result<()> {
-    if extension == "rs" {
-        if let Some(cargo_root) = find_root(path, "Cargo.toml") {
-            tokio::process::Command::new("cargo")
-                .arg("run")
-                .current_dir(cargo_root)
-                .status()
-                .await?;
-            return Ok(());
-        }
-    }
-
-    if matches!(extension, "js" | "ts" | "jsx" | "tsx") {
-        if let Some(node_root) = find_root(path, "package.json") {
-            tokio::process::Command::new("npm")
-                .arg("start")
-                .current_dir(node_root)
-                .status()
-                .await?;
-            return Ok(());
-        }
-    }
-
-    if extension == "go" {
-        if let Some(go_root) = find_root(path, "go.mod") {
-            tokio::process::Command::new("go")
-                .arg("run")
-                .arg(".")
-                .current_dir(go_root)
-                .status()
-                .await?;
-            return Ok(());
-        }
-    }
-
-    println!(
-        "{} detected project but no recognized runner found, falling back to snippet mode",
-        "info".yellow()
-    );
-    run_snippet(path, extension).await?;
-    Ok(())
-}
-
-async fn shell_integ_check() -> Result<()> {
-    let exe_path = std::env::current_exe()?;
-    let path_env = std::env::var("PATH").unwrap_or_default();
-
-    let in_path = path_env.split(':').any(|p| {
-        let p = Path::new(p);
-        exe_path.starts_with(p)
-    });
-
-    if !in_path {
-        println!(
-            "{} Keen is not in your $PATH! do you wish to add it? (run with --install)",
-            "info".yellow()
-        );
-    }
-
-    Ok(())
-}
-
-async fn install_keen() -> Result<()> {
-    let current_exe = std::env::current_exe()?;
-    let home = std::env::var("HOME").context("Could not find HOME directory")?;
-    let local_bin = PathBuf::from(&home).join(".local/bin");
-
-    if !local_bin.exists() {
-        std::fs::create_dir_all(&local_bin)?;
-    }
-
-    let target = local_bin.join("keen");
-    std::fs::copy(&current_exe, &target)?;
-
-    println!(
-        "{} installed to {}",
-        "ok".green().bold(),
-        target.display().to_string().cyan()
-    );
-
-    let path_env = std::env::var("PATH").unwrap_or_default();
-    if !path_env.contains(local_bin.to_str().unwrap()) {
-        println!(
-            "{} {} is not in your $PATH",
-            "warn".yellow(),
-            local_bin.display()
-        );
-
-        let shell = std::env::var("SHELL").unwrap_or_default();
-        let config_file = if shell.contains("zsh") {
-            Some(".zshrc")
-        } else if shell.contains("bash") {
-            Some(".bashrc")
-        } else if shell.contains("fish") {
-            Some(".config/fish/config.fish")
-        } else {
-            None
-        };
-
-        if let Some(cfg) = config_file {
-            let cfg_path = PathBuf::from(&home).join(cfg);
-            println!("{} add to {}? (y/n)", "prompt".magenta(), cfg);
-            // need read stdin.. temporary
-            println!(
-                "run this: echo 'export PATH=\"$PATH:{}\"' >> {}",
-                local_bin.display(),
-                cfg_path.display()
-            );
-        }
-    }
-
-    Ok(())
-}
-
-async fn run_proceed(path: &Path) -> Result<()> {
-    println!(
-        "{} building {}",
-        "→".blue(),
-        path.display().to_string().bold()
-    );
-    // TODO: build logic
     Ok(())
 }

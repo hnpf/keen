@@ -7,7 +7,9 @@ edition = "2024"
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
 colored = "3.1.1"
+notify = "8.0.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tempfile = "3.27.0"
 tokio = { version = "1.52.1", features = ["full"] }
+walkdir = "2.5.0"
