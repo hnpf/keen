@@ -182,7 +182,7 @@ async fn run_output(path: &Path, project_mode: bool) -> Result<()> {
     );
 
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let is_project = project_mode || detect_project(path);
+    let is_project = project_mode || (detect_project(path) && is_relevant_for_project(extension, path));
 
     if is_project {
         run_project(path, extension).await?;
@@ -198,6 +198,16 @@ fn detect_project(path: &Path) -> bool {
     find_root(path, "Cargo.toml").is_some() ||
     find_root(path, "package.json").is_some() ||
     find_root(path, "go.mod").is_some() ||
+}
+
+
+fn is_relevant_for_project(extension: &str, path: &Path) -> bool {
+    match extension {
+        "rs" => find_root(path, "Cargo.toml").is_some(),
+        "js" | "ts" | "jsx" | "tsx" => find_root(path, "package.json").is_some(),
+        "go" => find_root(path, "go.mod").is_some(),
+        _ => false,
+    }
 }
 
 async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
