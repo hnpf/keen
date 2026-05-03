@@ -30,13 +30,20 @@ async fn main() -> Result<()> {
     let file = match args.file {
         Some(f) => f,
         None => {
-            println!("{} provide a file to check or run, or use --help", "info".yellow());
+            println!(
+                "{} provide a file to check or run, or use --help",
+                "info".yellow()
+            );
             return Ok(());
         }
     };
 
     if !file.exists() {
-        eprintln!("{}: file not found: {}", "error".red().bold(), file.display());
+        eprintln!(
+            "{}: file not found: {}",
+            "error".red().bold(),
+            file.display()
+        );
         std::process::exit(1);
     }
 
@@ -64,7 +71,6 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
 
 async fn run_check(path: &Path) -> Result<()> {
     println!(
@@ -198,24 +204,23 @@ async fn run_output(path: &Path, project_mode: bool) -> Result<()> {
     );
 
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let is_project = project_mode || (detect_project(path) && is_relevant_for_project(extension, path));
+    let is_project =
+        project_mode || (detect_project(path) && is_relevant_for_project(extension, path));
 
     if is_project {
         run_project(path, extension).await?;
-
     } else {
         run_snippet(path, extension).await?;
     }
-    
+
     Ok(())
 }
 
 fn detect_project(path: &Path) -> bool {
-    find_root(path, "Cargo.toml").is_some() ||
-    find_root(path, "package.json").is_some() ||
-    find_root(path, "go.mod").is_some() ||
+    find_root(path, "Cargo.toml").is_some()
+        || find_root(path, "package.json").is_some()
+        || find_root(path, "go.mod").is_some()
 }
-
 
 fn is_relevant_for_project(extension: &str, path: &Path) -> bool {
     match extension {
@@ -231,7 +236,7 @@ async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
         "c" | "cpp" => {
             let tmp_dir = tempfile::tempdir()?;
             let tmp_path = tmp_dir.path().join("keen_exec");
-            
+
             let status = tokio::process::Command::new("clang")
                 .arg(path)
                 .arg("-o")
@@ -243,7 +248,10 @@ async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
                 if tmp_path.exists() {
                     tokio::process::Command::new(&tmp_path).status().await?;
                 } else {
-                    anyhow::bail!("binary created by compiler not found at {}", tmp_path.display());
+                    anyhow::bail!(
+                        "binary created by compiler not found at {}",
+                        tmp_path.display()
+                    );
                 }
             } else {
                 anyhow::bail!("compiler failed to compile snippet");
@@ -271,7 +279,10 @@ async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
                 if tmp_path.exists() {
                     tokio::process::Command::new(&tmp_path).status().await?;
                 } else {
-                    anyhow::bail!("binary created by compiler not found at {}", tmp_path.display());
+                    anyhow::bail!(
+                        "binary created by compiler not found at {}",
+                        tmp_path.display()
+                    );
                 }
             } else {
                 anyhow::bail!("compiler failed to compile snippet");
@@ -287,7 +298,11 @@ async fn run_snippet(path: &Path, extension: &str) -> Result<()> {
             let content = tokio::fs::read_to_string(path).await?;
             println!("{}", content);
         }
-        _ => println!("{} don't know how to run .{} files yet", "info".yellow(), extension),
+        _ => println!(
+            "{} don't know how to run .{} files yet",
+            "info".yellow(),
+            extension
+        ),
     }
     Ok(())
 }
@@ -303,7 +318,7 @@ async fn run_project(path: &Path, extension: &str) -> Result<()> {
             return Ok(());
         }
     }
-    
+
     if matches!(extension, "js" | "ts" | "jsx" | "tsx") {
         if let Some(node_root) = find_root(path, "package.json") {
             tokio::process::Command::new("npm")
@@ -327,7 +342,10 @@ async fn run_project(path: &Path, extension: &str) -> Result<()> {
         }
     }
 
-    println!("{} detected project but no recognized runner found, falling back to snippet mode", "info".yellow());
+    println!(
+        "{} detected project but no recognized runner found, falling back to snippet mode",
+        "info".yellow()
+    );
     run_snippet(path, extension).await?;
     Ok(())
 }
@@ -335,16 +353,19 @@ async fn run_project(path: &Path, extension: &str) -> Result<()> {
 async fn shell_integ_check() -> Result<()> {
     let exe_path = std::env::current_exe()?;
     let path_env = std::env::var("PATH").unwrap_or_default();
-    
+
     let in_path = path_env.split(':').any(|p| {
         let p = Path::new(p);
         exe_path.starts_with(p)
     });
 
     if !in_path {
-        println!("{} Keen is not in your $PATH! do you wish to add it? (run with --install)", "info".yellow());
+        println!(
+            "{} Keen is not in your $PATH! do you wish to add it? (run with --install)",
+            "info".yellow()
+        );
     }
-    
+
     Ok(())
 }
 
@@ -352,20 +373,28 @@ async fn install_keen() -> Result<()> {
     let current_exe = std::env::current_exe()?;
     let home = std::env::var("HOME").context("Could not find HOME directory")?;
     let local_bin = PathBuf::from(&home).join(".local/bin");
-    
+
     if !local_bin.exists() {
         std::fs::create_dir_all(&local_bin)?;
     }
-    
+
     let target = local_bin.join("keen");
     std::fs::copy(&current_exe, &target)?;
-    
-    println!("{} installed to {}", "ok".green().bold(), target.display().to_string().cyan());
-    
+
+    println!(
+        "{} installed to {}",
+        "ok".green().bold(),
+        target.display().to_string().cyan()
+    );
+
     let path_env = std::env::var("PATH").unwrap_or_default();
     if !path_env.contains(local_bin.to_str().unwrap()) {
-        println!("{} {} is not in your $PATH", "warn".yellow(), local_bin.display());
-        
+        println!(
+            "{} {} is not in your $PATH",
+            "warn".yellow(),
+            local_bin.display()
+        );
+
         let shell = std::env::var("SHELL").unwrap_or_default();
         let config_file = if shell.contains("zsh") {
             Some(".zshrc")
@@ -381,10 +410,14 @@ async fn install_keen() -> Result<()> {
             let cfg_path = PathBuf::from(&home).join(cfg);
             println!("{} add to {}? (y/n)", "prompt".magenta(), cfg);
             // need read stdin.. temporary
-            println!("run this: echo 'export PATH=\"$PATH:{}\"' >> {}", local_bin.display(), cfg_path.display());
+            println!(
+                "run this: echo 'export PATH=\"$PATH:{}\"' >> {}",
+                local_bin.display(),
+                cfg_path.display()
+            );
         }
     }
-    
+
     Ok(())
 }
 
