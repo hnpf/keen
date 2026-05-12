@@ -18,14 +18,29 @@ pub fn get_project_root(path: &Path, extension: &str) -> Option<PathBuf> {
         "rs" => find_root(path, "Cargo.toml"),
         "js" | "ts" | "jsx" | "tsx" => find_root(path, "package.json"),
         "go" => find_root(path, "go.mod"),
+        "py" => find_root(path, "requirements.txt"),
+        "c" | "cpp" | "h" | "hpp" => {
+            find_root(path, "CMakeLists.txt").or_else(|| find_root(path, "Makefile"))
+        }
         _ => None,
     }
 }
 
 pub fn parse_compiler_output(output: &str) {
     for line in output.lines() {
-        if line.contains(": error:") || line.contains(": warning:") || line.contains("error[") {
-            println!("{}", line);
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.contains(": error:") || line.contains("error[") {
+            println!("{}", line.red());
+        } else if line.contains(": warning:") {
+            println!("{}", line.yellow());
+        } else if line.contains(": note:") {
+            println!("{}", line.dimmed());
+        } else if line.contains("|") || line.contains("^") {
+            // likely a code snippet or pointer from rustc/clang
+            println!("{}", line.blue());
         }
     }
 }
