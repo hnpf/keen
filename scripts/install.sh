@@ -1,0 +1,34 @@
+#!/bin/bash
+# keen installer! direct and fast.
+
+set -e
+
+# check for cargo
+command -v cargo >/dev/null 2>&1 || { echo >&2 "cargo not found. install rust: https://rustup.rs/"; exit 1; }
+
+echo "this script will install keen."
+for i in {3..1}; do
+    echo -ne "starting in $i seconds... (ctrl+c to cancel)\r"
+    sleep 1
+done
+
+echo -e "\n--- let's go ---"
+sleep 1
+
+TMP_DIR=$(mktemp -d)
+echo "--- cloning to $TMP_DIR ---"
+git clone https://github.com/hnpf/keen.git "$TMP_DIR" --depth 1 || { echo "clone failed."; exit 1; }
+
+cd "$TMP_DIR" || exit 1
+
+echo "--- building (release mode) ---"
+cargo build --release || { echo "build failed."; exit 1; }
+
+echo "--- installing to ~/.local/bin ---"
+./target/release/keen --install
+
+echo "--- installation finished ---"
+echo "keen is now installed. if ~/.local/bin wasn't in your PATH, follow the instructions above."
+
+# cleanup
+rm -rf "$TMP_DIR"
