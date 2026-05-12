@@ -22,10 +22,10 @@ pub async fn run_check(path: &Path) -> Result<bool> {
 
     let duration = start.elapsed();
     if ok {
-        println!("{} {} ({:.2?})", "ok".green().bold(), msg, duration);
+        println!("{} ({:.2?})", msg.green(), duration);
+    } else {
+        println!("{}", "failed".red());
     }
-
-    Ok(ok)
 }
 
 async fn check_json(path: &Path) -> Result<(bool, String)> {
@@ -131,6 +131,13 @@ async fn check_py(path: &Path) -> Result<(bool, String)> {
         .await?;
 
     if !output.status.success() {
+        parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
+        Ok((false, String::new()))
+    } else {
+        Ok((true, "python syntax valid".to_string()))
+    }
+}
+s.success() {
         parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
         Ok((false, String::new()))
     } else {
