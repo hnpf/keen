@@ -75,6 +75,7 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
     }
 
     if args.check {
+        println!("{} checking {}", "→".cyan(), file.display());
         if file.is_dir() {
             if !check_dir(file).await? {
                 overall_success = false;
@@ -87,13 +88,6 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
         performed_action = true;
     }
 
-    if args.output {
-        if !run_output(file, args.project, &args.trailing).await? {
-            overall_success = false;
-        }
-        performed_action = true;
-    }
-
     if args.proceed {
         if !run_proceed(file).await? {
             overall_success = false;
@@ -101,8 +95,16 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
         performed_action = true;
     }
 
+    if args.output {
+        if !run_output(file, args.project, &args.trailing).await? {
+            overall_success = false;
+        }
+        performed_action = true;
+    }
+
     // default to check if no flags provided
     if !performed_action {
+        println!("{} checking {}", "→".cyan(), file.display());
         if file.is_dir() {
             if !check_dir(file).await? {
                 overall_success = false;
@@ -116,7 +118,8 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
 
     let duration = start.elapsed();
     if performed_action || !args.check && !args.output && !args.proceed {
-        println!("{} done in {:.2?}", "info".yellow(), duration);
+        let status = if overall_success { "success".green() } else { "failed".red() };
+        println!("{} {} in {:.2?}", "info".yellow(), status, duration);
     }
 
     Ok(overall_success)
