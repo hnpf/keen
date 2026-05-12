@@ -3,27 +3,22 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 use std::time::Instant;
-
 pub async fn run_check(path: &Path) -> Result<bool> {
     let start = Instant::now();
-
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-...
+
     let (ok, msg) = match extension {
         "json" => check_json(path).await?,
         "c" | "cpp" | "h" | "hpp" => check_c_family(path).await?,
         "go" => check_go(path).await?,
         "rs" => check_rust(path).await?,
         "ts" | "tsx" => check_ts(path).await?,
+        "py" => check_py(path).await?,
         _ => {
-            println!(
-                "{} no analyzer for .{}, skipping",
-                "info".yellow(),
-                extension
-            );
             return Ok(true);
         }
     };
+
 
     let duration = start.elapsed();
     if ok {
