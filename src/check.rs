@@ -148,5 +148,4 @@ s.success() {
         Ok((false, String::new()))
     } else {
         Ok((true, "python syntax valid".to_string()))
-    }
 }
