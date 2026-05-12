@@ -75,8 +75,8 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
     }
 
     if args.check {
-        println!("{} checking {}", "→".cyan(), file.display());
         if file.is_dir() {
+            println!("{} checking {}", "→".cyan(), file.display());
             if !check_dir(file).await? {
                 overall_success = false;
             }
@@ -104,8 +104,8 @@ async fn run_actions(file: &Path, args: &Args) -> Result<bool> {
 
     // default to check if no flags provided
     if !performed_action {
-        println!("{} checking {}", "→".cyan(), file.display());
         if file.is_dir() {
+            println!("{} checking {}", "→".cyan(), file.display());
             if !check_dir(file).await? {
                 overall_success = false;
             }
