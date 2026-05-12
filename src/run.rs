@@ -138,6 +138,15 @@ async fn run_project(path: &Path, extension: &str, root: Option<PathBuf>, args: 
         }
     }
 
+    if extension == "py" {
+        let status = tokio::process::Command::new("python3")
+            .arg(path)
+            .args(args)
+            .status()
+            .await?;
+        return Ok(status.success());
+    }
+
     println!(
         "{} detected project but no recognized runner found, falling back to snippet mode",
         "info".yellow()
