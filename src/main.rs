@@ -166,7 +166,32 @@ async fn run_fmt(path: &Path) -> Result<bool> {
 
 async fn init_project() -> Result<()> {
     let cwd = std::env::current_dir()?;
-    println!("{} initializing in {}", "→".green(), cwd.display());    
+    println!("{} initializing in {}", "→".green(), cwd.display());
+
+    println!("choose a template (rs, c, go, py) [default: rs]:");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let lang = input.trim().to_lowercase();
+
+    match lang.as_str() {
+        "c" => {
+            tokio::fs::write(cwd.join("main.c"), "#include <stdio.h>\n\nint main() {\n    printf(\"hello world\\n\");\n    return 0;\n}\n").await?;
+            println!("{} created main.c", "ok".green());
+        }
+        "go" => {
+            tokio::fs::write(cwd.join("main.go"), "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"hello world\")\n}\n").await?;
+            println!("{} created main.go", "ok".green());
+        }
+        "py" => {
+            tokio::fs::write(cwd.join("main.py"), "print(\"hello world\")\n").await?;
+            println!("{} created main.py", "ok".green());
+        }
+        _ => {
+            tokio::fs::write(cwd.join("main.rs"), "fn main() {\n    println!(\"hello world\");\n}\n").await?;
+            println!("{} created main.rs", "ok".green());
+        }
+    }
+    
     Ok(())
 }
 
