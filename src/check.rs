@@ -6,14 +6,9 @@ use std::time::Instant;
 
 pub async fn run_check(path: &Path) -> Result<bool> {
     let start = Instant::now();
-    println!(
-        "{} checking {}",
-        "→".cyan(),
-        path.display().to_string().bold()
-    );
 
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-
+...
     let (ok, msg) = match extension {
         "json" => check_json(path).await?,
         "c" | "cpp" | "h" | "hpp" => check_c_family(path).await?,
