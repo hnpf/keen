@@ -1,6 +1,7 @@
 use crate::utils::{find_root, parse_compiler_output};
 use anyhow::{Context, Result};
 use colored::*;
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::Instant;
 pub async fn run_check(path: &Path) -> Result<bool> {
