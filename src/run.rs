@@ -192,6 +192,45 @@ pub async fn run_proceed(path: &Path) -> Result<bool> {
         "→".blue(),
         path.display().to_string().bold()
     );
-    // TODO: build logic
+    
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let root = get_project_root(path, extension);
+
+    if let Some(r) = root {
+        match extension {
+            "rs" => {
+                let status = tokio::process::Command::new("cargo")
+                    .arg("build")
+                    .current_dir(r)
+                    .status()
+                    .await?;
+                return Ok(status.success());
+            }
+            "go" => {
+                let status = tokio::process::Command::new("go")
+                    .arg("build")
+                    .arg(".")
+                    .current_dir(r)
+                    .status()
+                    .await?;
+                return Ok(status.success());
+            }
+            "c" | "cpp" => {
+                if r.join("CMakeLists.txt").exists() {
+                    let build_dir = r.join("build");
+                    let _ = tokio::fs::create_dir_all(&build_dir).await;
+                    let _ = tokio::process::Command::new("cmake").arg("..").current_dir(&build_dir).status().await?;
+                    let status = tokio::process::Command::new("make").current_dir(&build_dir).status().await?;
+                    return Ok(status.success());
+                } else if r.join("Makefile").exists() {
+                    let status = tokio::process::Command::new("make").current_dir(r).status().await?;
+                    return Ok(status.success());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    println!("{} don't know how to build this yet", "info".yellow());
     Ok(true)
 }
