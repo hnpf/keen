@@ -3,10 +3,14 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, Write};
 use std::path::Path;
-use std::time::Instant;
 pub async fn run_check(path: &Path) -> Result<bool> {
     let start = Instant::now();
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    if matches!(extension, "json" | "c" | "cpp" | "h" | "hpp" | "go" | "rs" | "ts" | "tsx" | "py") {
+        print!("{} check {} ... ", "→".cyan(), path.display());
+        let _ = io::stdout().flush();
+    }
 
     let (ok, msg) = match extension {
         "json" => check_json(path).await?,
@@ -20,13 +24,14 @@ pub async fn run_check(path: &Path) -> Result<bool> {
         }
     };
 
-
     let duration = start.elapsed();
     if ok {
         println!("{} ({:.2?})", msg.green(), duration);
     } else {
         println!("{}", "failed".red());
     }
+
+    Ok(ok)
 }
 
 async fn check_json(path: &Path) -> Result<(bool, String)> {
