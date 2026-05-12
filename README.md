@@ -12,6 +12,13 @@
 - **shell integration:** `keen --install` to add it to your `$PATH`!
 
 ## installation
+
+**the fast way:**
+```bash
+curl -sSL https://raw.githubusercontent.com/hnpf/keen/main/scripts/install.sh | bash
+```
+
+**the manual way:**
 ```bash
 cargo build --release
 ./target/release/keen --install
