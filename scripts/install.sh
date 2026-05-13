@@ -13,7 +13,8 @@ for i in {3..1}; do
     echo -ne "starting in $i seconds... (ctrl+c to cancel)\r"
     sleep 1
 done
-sleep 1 # dont question me!
+# fuck it, let's just clear instead of waiting more? 
+clear
 echo "--- let's go! ---"
 
 TMP_DIR=$(mktemp -d)
