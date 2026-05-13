@@ -14,7 +14,7 @@ for i in {3..1}; do
     sleep 1
 done
 
-echo "--- let's go ---"
+echo "--- let's go ---\n"
 sleep 1
 
 TMP_DIR=$(mktemp -d)
