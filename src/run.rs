@@ -26,7 +26,14 @@ pub async fn run_output(path: &Path, project_mode: bool, args: &[String]) -> Res
 async fn run_snippet(path: &Path, extension: &str, args: &[String]) -> Result<bool> {
     let status = match extension {
         "c" | "cpp" => {
-            compile_and_run(path, "clang", &[], args).await?
+            let compiler = if tokio::process::Command::new("clang").arg("--version").output().await.is_ok() {
+                "clang"
+            } else if extension == "cpp" {
+                "g++"
+            } else {
+                "gcc"
+            };
+            compile_and_run(path, compiler, &[], args).await?
         }
         "go" => {
             tokio::process::Command::new("go")
@@ -34,7 +41,8 @@ async fn run_snippet(path: &Path, extension: &str, args: &[String]) -> Result<bo
                 .arg(path)
                 .args(args)
                 .status()
-                .await?
+                .await
+                .context("go not found in PATH")?
         }
         "rs" => {
             compile_and_run(path, "rustc", &[], args).await?
@@ -44,14 +52,24 @@ async fn run_snippet(path: &Path, extension: &str, args: &[String]) -> Result<bo
                 .arg(path)
                 .args(args)
                 .status()
-                .await?
+                .await
+                .context("node not found in PATH")?
         }
         "ts" | "tsx" => {
             tokio::process::Command::new("ts-node")
                 .arg(path)
                 .args(args)
                 .status()
-                .await?
+                .await
+                .context("ts-node not found in PATH. install it globally with npm.")?
+        }
+        "py" => {
+            tokio::process::Command::new("python3")
+                .arg(path)
+                .args(args)
+                .status()
+                .await
+                .context("python3 not found in PATH")?
         }
         "json" => {
             let content = tokio::fs::read_to_string(path).await?;
@@ -203,7 +221,8 @@ pub async fn run_proceed(path: &Path) -> Result<bool> {
                     .arg("build")
                     .current_dir(r)
                     .status()
-                    .await?;
+                    .await
+                    .context("cargo not found in PATH")?;
                 return Ok(status.success());
             }
             "go" => {
@@ -212,18 +231,30 @@ pub async fn run_proceed(path: &Path) -> Result<bool> {
                     .arg(".")
                     .current_dir(r)
                     .status()
-                    .await?;
+                    .await
+                    .context("go not found in PATH")?;
                 return Ok(status.success());
             }
             "c" | "cpp" => {
                 if r.join("CMakeLists.txt").exists() {
                     let build_dir = r.join("build");
                     let _ = tokio::fs::create_dir_all(&build_dir).await;
-                    let _ = tokio::process::Command::new("cmake").arg("..").current_dir(&build_dir).status().await?;
-                    let status = tokio::process::Command::new("make").current_dir(&build_dir).status().await?;
+                    let _ = tokio::process::Command::new("cmake").arg("..").current_dir(&build_dir).status().await.context("cmake not found in PATH")?;
+                    let status = tokio::process::Command::new("make").current_dir(&build_dir).status().await.context("make not found in PATH")?;
                     return Ok(status.success());
                 } else if r.join("Makefile").exists() {
-                    let status = tokio::process::Command::new("make").current_dir(r).status().await?;
+                    let status = tokio::process::Command::new("make").current_dir(r).status().await.context("make not found in PATH")?;
+                    return Ok(status.success());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    println!("{} don't know how to build this yet", "info".yellow());
+    Ok(true)
+}
+status = tokio::process::Command::new("make").current_dir(r).status().await?;
                     return Ok(status.success());
                 }
             }
