@@ -93,13 +93,33 @@ async fn compile_and_run(src: &Path, compiler: &str, extra_args: &[&str], run_ar
     let tmp = tempfile::tempdir()?;
     let bin = tmp.path().join("keen_exec");
 
+    let mut args = Vec::new();
+    for arg in extra_args {
+        args.push(arg.to_string());
+    }
+
+    // smart include: look for "include" dir in parent and grandparent
+    if let Some(parent) = src.parent() {
+        let include_dir = parent.join("include");
+        if include_dir.exists() {
+            args.push(format!("-I{}", include_dir.display()));
+        }
+        if let Some(grandparent) = parent.parent() {
+            let include_dir = grandparent.join("include");
+            if include_dir.exists() {
+                args.push(format!("-I{}", include_dir.display()));
+            }
+        }
+    }
+
     let status = tokio::process::Command::new(compiler)
-        .args(extra_args)
+        .args(&args)
         .arg(src)
         .arg("-o")
         .arg(&bin)
         .status()
-        .await?;
+        .await
+        .with_context(|| format!("{} not found in PATH", compiler))?;
 
     if !status.success() {
         anyhow::bail!("compile failed");
@@ -112,7 +132,8 @@ async fn compile_and_run(src: &Path, compiler: &str, extra_args: &[&str], run_ar
     let status = tokio::process::Command::new(&bin)
         .args(run_args)
         .status()
-        .await?;
+        .await
+        .context("failed to execute the compiled binary")?;
     Ok(status)
 }
 
@@ -175,7 +196,8 @@ async fn run_project(path: &Path, extension: &str, root: Option<PathBuf>, args: 
                     .arg("..")
                     .current_dir(&build_dir)
                     .status()
-                    .await?;
+                    .await
+                    .context("cmake not found in PATH")?;
                 
                 if !cmake_status.success() {
                     return Ok(false);
@@ -184,14 +206,26 @@ async fn run_project(path: &Path, extension: &str, root: Option<PathBuf>, args: 
                 let make_status = tokio::process::Command::new("make")
                     .current_dir(&build_dir)
                     .status()
-                    .await?;
+                    .await
+                    .context("make not found in PATH")?;
 
                 return Ok(make_status.success());
             } else if cpp_root.join("Makefile").exists() {
                 let status = tokio::process::Command::new("make")
                     .current_dir(cpp_root)
                     .status()
-                    .await?;
+                    .await
+                    .context("make not found in PATH")?;
+                return Ok(status.success());
+            } else if cpp_root.join("Cargo.toml").exists() {
+                let status = tokio::process::Command::new("cargo")
+                    .arg("run")
+                    .arg("--")
+                    .args(args)
+                    .current_dir(cpp_root)
+                    .status()
+                    .await
+                    .context("cargo not found in PATH")?;
                 return Ok(status.success());
             }
         }
@@ -244,6 +278,9 @@ pub async fn run_proceed(path: &Path) -> Result<bool> {
                     return Ok(status.success());
                 } else if r.join("Makefile").exists() {
                     let status = tokio::process::Command::new("make").current_dir(r).status().await.context("make not found in PATH")?;
+                    return Ok(status.success());
+                } else if r.join("Cargo.toml").exists() {
+                    let status = tokio::process::Command::new("cargo").arg("build").current_dir(r).status().await.context("cargo not found in PATH")?;
                     return Ok(status.success());
                 }
             }
