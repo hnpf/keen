@@ -254,14 +254,3 @@ pub async fn run_proceed(path: &Path) -> Result<bool> {
     println!("{} don't know how to build this yet", "info".yellow());
     Ok(true)
 }
-status = tokio::process::Command::new("make").current_dir(r).status().await?;
-                    return Ok(status.success());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    println!("{} don't know how to build this yet", "info".yellow());
-    Ok(true)
-}
