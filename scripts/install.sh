@@ -14,8 +14,7 @@ for i in {3..1}; do
     sleep 1
 done
 
-echo -ne "--- let's go ---\n"
-sleep 1
+echo "--- let's go! ---"
 
 TMP_DIR=$(mktemp -d)
 echo "--- cloning to $TMP_DIR ---"
