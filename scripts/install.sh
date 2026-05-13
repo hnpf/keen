@@ -34,7 +34,7 @@ echo "--- installing to ~/.local/bin ---"
 ./target/release/keen --install
 
 echo "--- installation finished ---"
-echo "keen is now installed. if ~/.local/bin wasn't in your PATH, follow the instructions above."
+echo "keen v$VERSION is now installed. if ~/.local/bin wasn't in your PATH, follow the instructions above!"
 
 # cleanup
 rm -rf "$TMP_DIR"
