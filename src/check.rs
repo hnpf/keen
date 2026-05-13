@@ -143,9 +143,3 @@ async fn check_py(path: &Path) -> Result<(bool, String)> {
         Ok((true, "python syntax valid".to_string()))
     }
 }
-fn success() {
-        parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
-        Ok((false, String::new()))
-    } else {
-        Ok((true, "python syntax valid".to_string()))
-}
