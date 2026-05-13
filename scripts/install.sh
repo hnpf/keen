@@ -12,7 +12,7 @@ for i in {3..1}; do
     sleep 1
 done
 
-echo -e "\n--- let's go ---"
+echo "--- let's go ---"
 sleep 1
 
 TMP_DIR=$(mktemp -d)
@@ -21,7 +21,11 @@ git clone https://github.com/hnpf/keen.git "$TMP_DIR" --depth 1 || { echo "clone
 
 cd "$TMP_DIR" || exit 1
 
+VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
+echo "--- getting keen v$VERSION ---"
+
 echo "--- building (release mode) ---"
+
 cargo build --release || { echo "build failed."; exit 1; }
 
 echo "--- installing to ~/.local/bin ---"
