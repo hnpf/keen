@@ -6,7 +6,9 @@ set -e
 # check for cargo
 command -v cargo >/dev/null 2>&1 || { echo >&2 "cargo not found. install rust: https://rustup.rs/"; exit 1; }
 
-echo "this script will install keen."
+VERSION=$(curl -sSL https://raw.githubusercontent.com/hnpf/keen/main/Cargo.toml | grep '^version =' | cut -d '"' -f 2 || echo "latest")
+
+echo "this script will install keen v$VERSION."
 for i in {3..1}; do
     echo -ne "starting in $i seconds... (ctrl+c to cancel)\r"
     sleep 1
