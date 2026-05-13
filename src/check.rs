@@ -78,7 +78,8 @@ async fn check_go(path: &Path) -> Result<(bool, String)> {
         .arg("/dev/null")
         .arg(path)
         .output()
-        .await?;
+        .await
+        .context("go not found in PATH")?;
 
     if !output.status.success() {
         parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
@@ -96,14 +97,16 @@ async fn check_rust(path: &Path) -> Result<(bool, String)> {
             .arg("check")
             .current_dir(root)
             .output()
-            .await?
+            .await
+            .context("cargo not found in PATH")?
     } else {
         tokio::process::Command::new("rustc")
             .arg("-Z")
             .arg("no-codegen")
             .arg(path)
             .output()
-            .await?
+            .await
+            .context("rustc not found in PATH")?
     };
 
     if !output.status.success() {
@@ -119,7 +122,8 @@ async fn check_ts(path: &Path) -> Result<(bool, String)> {
         .arg("--noEmit")
         .arg(path)
         .output()
-        .await?;
+        .await
+        .context("tsc not found in PATH. install typescript first.")?;
 
     if !output.status.success() {
         parse_compiler_output(&String::from_utf8_lossy(&output.stdout));
@@ -135,7 +139,8 @@ async fn check_py(path: &Path) -> Result<(bool, String)> {
         .arg("py_compile")
         .arg(path)
         .output()
-        .await?;
+        .await
+        .context("python3 not found in PATH")?;
 
     if !output.status.success() {
         parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
