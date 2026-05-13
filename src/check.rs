@@ -56,18 +56,27 @@ async fn check_json(path: &Path) -> Result<(bool, String)> {
 }
 
 async fn check_c_family(path: &Path) -> Result<(bool, String)> {
-    let output = tokio::process::Command::new("clang")
+    let compiler = if tokio::process::Command::new("clang").arg("--version").output().await.is_ok() {
+        "clang"
+    } else if tokio::process::Command::new("gcc").arg("--version").output().await.is_ok() {
+        "gcc"
+    } else {
+        anyhow::bail!("neither clang nor gcc found in PATH");
+    };
+
+    let output = tokio::process::Command::new(compiler)
         .arg("-fsyntax-only")
         .arg("-Wall")
         .arg(path)
         .output()
-        .await?;
+        .await
+        .with_context(|| format!("{} failed to execute", compiler))?;
 
     if !output.status.success() {
         parse_compiler_output(&String::from_utf8_lossy(&output.stderr));
         Ok((false, String::new()))
     } else {
-        Ok((true, "C/C++ syntax valid".to_string()))
+        Ok((true, format!("{} syntax valid", compiler)))
     }
 }
 
