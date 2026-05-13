@@ -1,3 +1,4 @@
+use std::time::Instant; 
 use crate::utils::{find_root, parse_compiler_output};
 use anyhow::{Context, Result};
 use colored::*;
