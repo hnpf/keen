@@ -1,5 +1,5 @@
 use crate::utils::{get_project_root};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::*;
 use std::path::{Path, PathBuf};
 
