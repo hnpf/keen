@@ -14,7 +14,7 @@ pub fn find_root(path: &Path, marker: &str) -> Option<PathBuf> {
 }
 
 pub fn get_project_root(path: &Path, extension: &str) -> Option<PathBuf> {
-    match extension {
+    let specific = match extension {
         "rs" => find_root(path, "Cargo.toml"),
         "js" | "ts" | "jsx" | "tsx" => find_root(path, "package.json"),
         "go" => find_root(path, "go.mod"),
@@ -23,7 +23,14 @@ pub fn get_project_root(path: &Path, extension: &str) -> Option<PathBuf> {
             find_root(path, "CMakeLists.txt").or_else(|| find_root(path, "Makefile"))
         }
         _ => None,
-    }
+    };
+
+    specific.or_else(|| {
+        // polyglot fallback: if we're in a rust/node/go project but looking at a different file type
+        find_root(path, "Cargo.toml")
+            .or_else(|| find_root(path, "package.json"))
+            .or_else(|| find_root(path, "go.mod"))
+    })
 }
 
 pub fn parse_compiler_output(output: &str) {
